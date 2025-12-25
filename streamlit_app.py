@@ -42,7 +42,7 @@ def load_model():
     return YOLO("yolov8n.pt")
 
 model = load_model()
-st.success("Model YOLOv8n loaded successfully")
+st.success("✅ Model YOLOv8n loaded successfully")
 
 # Layout
 left, right = st.columns([1, 2], gap="large")
