@@ -1,8 +1,9 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase
 from ultralytics import YOLO
 import av
 import cv2
+import threading
 
 # ==================== PAGE CONFIGURATION ====================
 st.set_page_config(
@@ -16,39 +17,45 @@ st.set_page_config(
 # ==================== CUSTOM CSS (Enterprise-grade Design) ====================
 st.markdown("""
 <style>
-    /* Import modern font */
+    /* Import Inter – the most widely used dashboard font in 2025 */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
 
-    /* Main container adjustments */
+    /* Responsive container */
     .block-container {
-        max-width: 1280px;
+        max-width: 1400px;
         padding-top: 2rem;
-        padding-left: 2rem;
-        padding-right: 2rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
     }
 
-    /* Hide Streamlit's default elements */
+    @media (max-width: 1024px) {
+        .block-container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+    }
+
+    /* Hide Streamlit defaults */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* Header styling */
+    /* Header */
     .main-header {
         text-align: center;
         margin-bottom: 3rem;
     }
     .main-header h1 {
-        font-size: 3rem;
+        font-size: 2.75rem;
         font-weight: 700;
         background: linear-gradient(135deg, #6366f1, #8b5cf6);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
-        line-height: 1.2;
     }
     .main-header p {
         font-size: 1.25rem;
@@ -57,23 +64,28 @@ st.markdown("""
         font-weight: 500;
     }
 
-    /* Glassmorphic cards */
+    /* Glassmorphic cards with dark mode support */
     .glass-card {
-        background: rgba(255, 255, 255, 0.75);
+        background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.4);
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
         padding: 2rem;
         transition: all 0.3s ease;
     }
+    @media (prefers-color-scheme: dark) {
+        .glass-card {
+            background: rgba(30, 30, 30, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    }
     .glass-card:hover {
-        transform: translateY(-4px);
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
     }
 
-    /* Control panel styling */
+    /* Control header */
     .control-header {
         font-size: 1.5rem;
         font-weight: 600;
@@ -84,16 +96,15 @@ st.markdown("""
         gap: 0.75rem;
     }
 
-    /* Custom slider styling */
-    .stSlider > label {
-        font-weight: 600;
-        color: #334155;
-    }
-    section[data-testid="stSlider"] .css-1g0d3z1 {
-        background: linear-gradient(to right, #6366f1, #8b5cf6);
+    /* Video container – now applied */
+    .video-container {
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        position: relative;
     }
 
-    /* Status indicators */
+    /* Status badges */
     .status-badge {
         display: inline-flex;
         align-items: center;
@@ -105,25 +116,6 @@ st.markdown("""
         background: #f0fdf4;
         color: #166534;
         border: 1px solid #86efac;
-    }
-    .status-badge.warning {
-        background: #fffbeb;
-        color: #92400e;
-        border-color: #fcd34d;
-    }
-
-    /* Webcam container */
-    .video-container {
-        border-radius: 20px;
-        overflow: hidden;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-        position: relative;
-    }
-    .video-overlay {
-        position: absolute;
-        top: 1rem;
-        left: 1rem;
-        z-index: 10;
     }
 
     /* Footer */
@@ -140,13 +132,13 @@ st.markdown("""
         text-decoration: none;
         font-weight: 500;
     }
-    .footer a:hover {
-        text-decoration: underline;
-    }
 
-    /* Loading spinner override */
-    .stSpinner > div {
-        border-top-color: #6366f1 !important;
+    /* Responsive columns */
+    @media (max-width: 768px) {
+        div[data-testid="column"] {
+            width: 100% !important;
+            margin-bottom: 2rem;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -159,123 +151,102 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== MODEL LOADING WITH FEEDBACK ====================
+# ==================== MODEL LOADING ====================
 @st.cache_resource(show_spinner=False)
 def load_model():
-    with st.spinner("Loading YOLOv8 model... This may take a moment."):
+    with st.spinner("Loading YOLOv8 model..."):
         return YOLO("yolov8n.pt")
 
 model = load_model()
 
-# Status indicator
 st.markdown("""
 <div class="status-badge">
     <span>●</span> Model loaded: YOLOv8n (nano)
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== LAYOUT: TWO COLUMNS ====================
-left_col, right_col = st.columns([1, 2], gap="large")
+# ==================== RESPONSIVE LAYOUT ====================
+# Use CSS media query fallback + flexible column ratios
+left_col, right_col = st.columns([1, 1.8], gap="large")
 
 with left_col:
-    # Controls Card
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("<div class='control-header'>⚙️ Detection Controls</div>", unsafe_allow_html=True)
 
-    conf = st.slider(
-        "Confidence Threshold",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.25,
-        step=0.05,
-        help="Lower values show more detections (including weaker ones)"
-    )
+    conf = st.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05,
+                     help="Lower values show more detections (including weaker ones)")
+    iou = st.slider("IoU Threshold (NMS)", 0.0, 1.0, 0.45, 0.05,
+                    help="Higher values reduce overlapping bounding boxes")
 
-    iou = st.slider(
-        "IoU Threshold (NMS)",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.45,
-        step=0.05,
-        help="Higher values reduce overlapping bounding boxes"
-    )
-
-    # Model info expander
     with st.expander("📊 Model & Performance Info", expanded=False):
         st.markdown("""
         **Model**: YOLOv8n (nano) – Optimized for speed  
-        **Inference**: Runs entirely in browser via WebRTC  
+        **Inference**: Real-time via WebRTC  
         **Expected FPS**: 20–35 on modern hardware  
-        **Tip**: For higher accuracy, replace `yolov8n.pt` with `yolov8m.pt` or `yolov8l.pt`
+        **Tip**: Replace `yolov8n.pt` with larger models for higher accuracy
         """)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 with right_col:
-    # Video Feed Card
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("<div class='control-header'>📹 Live Detection Feed</div>", unsafe_allow_html=True)
+    st.caption("Click **Start Camera** and allow access. Parameters update live.")
 
-    st.caption("Click **START** below and allow camera access. Detection runs in real-time.")
-
-    # Detector class with current parameters
-    class YOLODetector:
-        def __init__(self, model, conf, iou):
-            self.model = model
+    # Real-time parameter processor
+    class YOLODetector(VideoProcessorBase):
+        def __init__(self):
+            self.lock = threading.Lock()
             self.conf = conf
             self.iou = iou
+
+        def update_params(self, conf, iou):
+            with self.lock:
+                self.conf = conf
+                self.iou = iou
 
         def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
             img = frame.to_ndarray(format="bgr24")
 
-            # Run inference
-            results = self.model.predict(
-                source=img,
-                conf=self.conf,
-                iou=self.iou,
-                verbose=False,
-                device="cpu"
-            )
+            with self.lock:
+                current_conf = self.conf
+                current_iou = self.iou
 
-            # Annotate frame
-            annotated_frame = results[0].plot(
-                line_width=2,
-                font_size=1,
-                labels=True,
-                boxes=True,
-                masks=False,
-                probs=True
-            )
+            results = model.predict(source=img, conf=current_conf, iou=current_iou,
+                                    verbose=False, device="cpu")
 
-            return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+            annotated = results[0].plot(line_width=2, font_size=1, labels=True,
+                                       boxes=True, probs=True)
 
-    # WebRTC Streamer
+            return av.VideoFrame.from_ndarray(annotated, format="bgr24")
+
+    # Streamer with live parameter updates
     ctx = webrtc_streamer(
         key="yolov8-detection",
         mode=WebRtcMode.SENDRECV,
-        video_processor_factory=lambda: YOLODetector(model, conf, iou),
-        rtc_configuration={
-            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-        },
-        media_stream_constraints={
-            "video": {"width": {"ideal": 1280}, "height": {"ideal": 720}},
-            "audio": False
-        },
+        video_processor_factory=YOLODetector,
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        media_stream_constraints={"video": {"width": {"ideal": 1280}, "height": {"ideal": 720}}, "audio": False},
         async_processing=True,
-        translations={
-            "start": "Start Camera",
-            "stop": "Stop Camera",
-            "select_device": "Select Camera"
-        }
+        translations={"start": "Start Camera", "stop": "Stop Camera"}
     )
 
-    # Live status
+    # Update processor params on slider change
+    if ctx.video_processor:
+        ctx.video_processor.update_params(conf, iou)
+
+    # Status
     if ctx.state.playing:
         st.success("● Live detection active")
     elif ctx.state.paused:
         st.warning("● Stream paused")
     else:
-        st.info("● Click 'Start Camera' to begin detection")
+        st.info("● Ready – Click 'Start Camera'")
+
+    # Apply video container styling
+    st.markdown("<div class='video-container'>", unsafe_allow_html=True)
+    # The webrtc component renders inside the previous container automatically
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -283,7 +254,7 @@ with right_col:
 st.markdown("""
 <div class="footer">
     Built with <strong>Streamlit</strong> • Powered by <strong>Ultralytics YOLOv8</strong><br>
-    <a href="https://github.com/ultralytics/ultralytics" target="_blank">Ultralytics GitHub</a> • 
+    <a href="https://ultralytics.com" target="_blank">Ultralytics</a> • 
     <a href="https://docs.ultralytics.com" target="_blank">Documentation</a>
 </div>
 """, unsafe_allow_html=True)
