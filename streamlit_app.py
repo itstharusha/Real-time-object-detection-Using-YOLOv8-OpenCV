@@ -3,15 +3,10 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase
 from ultralytics import YOLO
 import av
 import threading
-import pandas as pd
-
-# Import ByteTrack from YOLOX (you need to install yolox)
-from yolox.tracker.byte_tracker import BYTETracker
-from ultralytics.utils.plotting import Annotator
 
 # Page config
 st.set_page_config(
-    page_title="YOLOv8 Object Tracking Dashboard",
+    page_title="YOLOv8 Object Detection Dashboard",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -20,6 +15,13 @@ st.set_page_config(
 # Scoped CSS
 st.markdown("""
 <style>
+    .card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
     .status {
         display: inline-block;
         padding: 0.4rem 0.8rem;
@@ -33,8 +35,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.title("YOLOv8 Object Tracking Dashboard")
-st.caption("Real-time detection + tracking powered by Ultralytics YOLOv8 + ByteTrack")
+st.title("YOLOv8 Object Detection Dashboard")
+st.caption("Real-time object detection powered by Ultralytics YOLOv8")
 
 # Model loading
 @st.cache_resource
@@ -42,12 +44,13 @@ def load_model():
     return YOLO("yolov8n.pt")
 
 model = load_model()
-st.success("Model YOLOv8n loaded successfully")
+st.success("✅ Model YOLOv8n loaded successfully")
 
 # Layout
 left, right = st.columns([1, 2], gap="large")
 
 with left:
+    st.container()
     st.subheader("Detection Parameters")
     conf = st.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
     iou = st.slider("IoU Threshold", 0.0, 1.0, 0.45, 0.05)
@@ -61,7 +64,8 @@ with left:
         """)
 
 with right:
-    st.subheader("Live Tracking Feed")
+    st.container()
+    st.subheader("Live Detection Feed")
     st.caption("Click 'Start Camera' and grant permission.")
 
     class YOLODetector(VideoProcessorBase):
@@ -69,8 +73,6 @@ with right:
             self.lock = threading.Lock()
             self.conf = conf
             self.iou = iou
-            self.tracker = BYTETracker()   # persistent tracker
-            self.last_tracks = []
 
         def update_params(self, conf, iou):
             with self.lock:
@@ -78,35 +80,10 @@ with right:
 
         def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
             img = frame.to_ndarray(format="bgr24")
-
             with self.lock:
                 c, i = self.conf, self.iou
-
-            # Run YOLO detection
             results = model.predict(img, conf=c, iou=i, verbose=False, device="cpu")
-            boxes = results[0].boxes
-
-            if boxes is not None and len(boxes) > 0:
-                dets = boxes.xywh.cpu().numpy()
-                scores = boxes.conf.cpu().numpy()
-                cls_ids = boxes.cls.cpu().numpy()
-
-                # Update tracker
-                tracks = self.tracker.update(dets, scores, cls_ids, img.shape)
-
-                # Draw boxes with IDs
-                annotator = Annotator(img)
-                for track in tracks:
-                    x1, y1, x2, y2, track_id, cls_id = track
-                    label = f"{model.names[int(cls_id)]} ID:{int(track_id)}"
-                    annotator.box_label([x1, y1, x2, y2], label)
-
-                self.last_tracks = tracks
-                annotated = annotator.result()
-            else:
-                self.last_tracks = []
-                annotated = img
-
+            annotated = results[0].plot(line_width=2, font_size=1)
             return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
     ctx = webrtc_streamer(
@@ -122,29 +99,10 @@ with right:
         ctx.video_processor.update_params(conf, iou)
 
     if ctx.state.playing:
-        st.markdown('<span class="status active">Live tracking active</span>', unsafe_allow_html=True)
+        st.markdown('<span class="status active">Live detection active</span>', unsafe_allow_html=True)
     else:
         st.markdown('<span class="status ready">Ready – Start Camera</span>', unsafe_allow_html=True)
 
-# Sidebar: tracked objects table
-st.sidebar.header("Tracked Objects")
-if ctx and ctx.video_processor and ctx.video_processor.last_tracks is not None:
-    tracks = ctx.video_processor.last_tracks
-    if len(tracks) > 0:
-        data = []
-        for track in tracks:
-            x1, y1, x2, y2, track_id, cls_id = track
-            data.append({
-                "Track ID": int(track_id),
-                "Class": model.names.get(int(cls_id), "unknown"),
-            })
-        df = pd.DataFrame(data)
-        st.sidebar.dataframe(df, use_container_width=True)
-    else:
-        st.sidebar.write("No objects detected.")
-else:
-    st.sidebar.write("Camera not active.")
-
 # Footer
 st.markdown("---")
-st.caption("Powered by Streamlit • Ultralytics YOLOv8 + ByteTrack")
+st.caption("Powered by Streamlit • Ultralytics YOLOv8")
