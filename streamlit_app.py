@@ -2,198 +2,191 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase
 from ultralytics import YOLO
 import av
-import cv2
 import threading
 
-# ==================== PAGE CONFIGURATION ====================
+# Page Configuration
 st.set_page_config(
-    page_title="YOLOv8 Object Detection",
+    page_title="YOLOv8 Object Detection Dashboard",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed",
     menu_items=None
 )
 
-# ==================== CUSTOM CSS (Enterprise-grade Design) ====================
+# Custom CSS for Professional Dashboard Aesthetic
 st.markdown("""
 <style>
-    /* Import Inter – the most widely used dashboard font in 2025 */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    /* System font stack for maximum professionalism and performance */
+    html, body, [class*="css"]  {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     }
 
-    /* Responsive container */
+    /* Container adjustments */
     .block-container {
         max-width: 1400px;
-        padding-top: 2rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
+        padding-top: 3rem;
+        padding-bottom: 3rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
     }
 
-    @media (max-width: 1024px) {
-        .block-container {
-            padding-left: 1rem;
-            padding-right: 1rem;
-        }
-    }
-
-    /* Hide Streamlit defaults */
+    /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
     /* Header */
-    .main-header {
-        text-align: center;
-        margin-bottom: 3rem;
-    }
     .main-header h1 {
-        font-size: 2.75rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin: 0;
+        font-size: 2.5rem;
+        font-weight: 600;
+        color: #111827;
+        text-align: center;
+        margin-bottom: 0.5rem;
     }
     .main-header p {
-        font-size: 1.25rem;
-        color: #64748b;
-        margin-top: 0.75rem;
-        font-weight: 500;
+        font-size: 1.125rem;
+        color: #4b5563;
+        text-align: center;
+        margin-top: 0;
+        font-weight: 400;
     }
 
-    /* Glassmorphic cards with dark mode support */
-    .glass-card {
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.4);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+    /* Clean card containers */
+    .dashboard-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
         padding: 2rem;
-        transition: all 0.3s ease;
-    }
-    @media (prefers-color-scheme: dark) {
-        .glass-card {
-            background: rgba(30, 30, 30, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-    }
-    .glass-card:hover {
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        height: 100%;
     }
 
-    /* Control header */
-    .control-header {
-        font-size: 1.5rem;
+    /* Section headers */
+    .section-header {
+        font-size: 1.25rem;
         font-weight: 600;
-        color: #1e293b;
+        color: #111827;
         margin-bottom: 1.5rem;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 0.5rem;
     }
 
-    /* Video container – now applied */
+    /* Video feed container */
     .video-container {
-        border-radius: 20px;
+        border-radius: 12px;
         overflow: hidden;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-        position: relative;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        background: #000;
     }
 
-    /* Status badges */
-    .status-badge {
+    /* Status indicators - subtle and professional */
+    .status-indicator {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        border-radius: 9999px;
+        padding: 0.375rem 0.75rem;
+        border-radius: 6px;
         font-size: 0.875rem;
-        font-weight: 600;
-        background: #f0fdf4;
-        color: #166534;
-        border: 1px solid #86efac;
+        font-weight: 500;
+        background: #f3f4f6;
+        color: #374151;
     }
+    .status-active { background: #ecfdf5; color: #065f46; }
+    .status-ready { background: #fef3c7; color: #92400e; }
 
     /* Footer */
     .footer {
         text-align: center;
-        margin-top: 5rem;
-        padding: 2rem 0;
-        color: #94a3b8;
+        margin-top: 4rem;
+        padding: 1.5rem 0;
+        color: #6b7280;
         font-size: 0.875rem;
-        border-top: 1px solid #e2e8f0;
+        border-top: 1px solid #e5e7eb;
     }
     .footer a {
-        color: #6366f1;
+        color: #4f46e5;
         text-decoration: none;
-        font-weight: 500;
     }
 
-    /* Responsive columns */
+    /* Responsive adjustments */
     @media (max-width: 768px) {
         div[data-testid="column"] {
             width: 100% !important;
             margin-bottom: 2rem;
         }
+        .block-container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== HEADER ====================
+# Header
 st.markdown("""
 <div class="main-header">
-    <h1>YOLOv8 Object Detection</h1>
-    <p>Real-time, high-performance detection powered by Ultralytics</p>
+    <h1>YOLOv8 Object Detection Dashboard</h1>
+    <p>Real-time object detection powered by Ultralytics YOLOv8</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== MODEL LOADING ====================
+# Model Loading
 @st.cache_resource(show_spinner=False)
 def load_model():
-    with st.spinner("Loading YOLOv8 model..."):
+    with st.spinner("Initializing model..."):
         return YOLO("yolov8n.pt")
 
 model = load_model()
 
 st.markdown("""
-<div class="status-badge">
-    <span>●</span> Model loaded: YOLOv8n (nano)
+<div class="status-indicator">
+    Model Status: YOLOv8n (nano) loaded successfully
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== RESPONSIVE LAYOUT ====================
-# Use CSS media query fallback + flexible column ratios
-left_col, right_col = st.columns([1, 1.8], gap="large")
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Layout
+left_col, right_col = st.columns([1, 2], gap="large")
 
 with left_col:
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='control-header'>⚙️ Detection Controls</div>", unsafe_allow_html=True)
+    st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header'>Detection Parameters</div>", unsafe_allow_html=True)
 
-    conf = st.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05,
-                     help="Lower values show more detections (including weaker ones)")
-    iou = st.slider("IoU Threshold (NMS)", 0.0, 1.0, 0.45, 0.05,
-                    help="Higher values reduce overlapping bounding boxes")
+    conf = st.slider(
+        "Confidence Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.25,
+        step=0.05,
+        help="Filters detections below the specified confidence level"
+    )
 
-    with st.expander("📊 Model & Performance Info", expanded=False):
+    iou = st.slider(
+        "IoU Threshold (Non-Maximum Suppression)",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.45,
+        step=0.05,
+        help="Controls suppression of overlapping bounding boxes"
+    )
+
+    with st.expander("Model Information"):
         st.markdown("""
-        **Model**: YOLOv8n (nano) – Optimized for speed  
-        **Inference**: Real-time via WebRTC  
-        **Expected FPS**: 20–35 on modern hardware  
-        **Tip**: Replace `yolov8n.pt` with larger models for higher accuracy
+        - **Architecture**: YOLOv8n (nano variant) – optimized for real-time performance
+        - **Inference Mode**: Client-side via WebRTC
+        - **Performance**: 20–35 FPS on standard hardware
+        - **Note**: For improved accuracy, consider yolov8m.pt or yolov8l.pt
         """)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 with right_col:
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='control-header'>📹 Live Detection Feed</div>", unsafe_allow_html=True)
-    st.caption("Click **Start Camera** and allow access. Parameters update live.")
+    st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header'>Live Detection Feed</div>", unsafe_allow_html=True)
 
-    # Real-time parameter processor
+    st.caption("Select 'Start Camera' and grant permission. Parameter adjustments apply in real time.")
+
     class YOLODetector(VideoProcessorBase):
         def __init__(self):
             self.lock = threading.Lock()
@@ -212,48 +205,57 @@ with right_col:
                 current_conf = self.conf
                 current_iou = self.iou
 
-            results = model.predict(source=img, conf=current_conf, iou=current_iou,
-                                    verbose=False, device="cpu")
+            results = model.predict(
+                source=img,
+                conf=current_conf,
+                iou=current_iou,
+                verbose=False,
+                device="cpu"
+            )
 
-            annotated = results[0].plot(line_width=2, font_size=1, labels=True,
-                                       boxes=True, probs=True)
+            annotated = results[0].plot(
+                line_width=2,
+                font_size=1,
+                labels=True,
+                boxes=True,
+                probs=True
+            )
 
             return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
-    # Streamer with live parameter updates
     ctx = webrtc_streamer(
         key="yolov8-detection",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=YOLODetector,
         rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-        media_stream_constraints={"video": {"width": {"ideal": 1280}, "height": {"ideal": 720}}, "audio": False},
+        media_stream_constraints={
+            "video": {"width": {"ideal": 1280}, "height": {"ideal": 720}},
+            "audio": False
+        },
         async_processing=True,
-        translations={"start": "Start Camera", "stop": "Stop Camera"}
+        translations={
+            "start": "Start Camera",
+            "stop": "Stop Camera"
+        }
     )
 
-    # Update processor params on slider change
     if ctx.video_processor:
         ctx.video_processor.update_params(conf, iou)
 
-    # Status
     if ctx.state.playing:
-        st.success("● Live detection active")
-    elif ctx.state.paused:
-        st.warning("● Stream paused")
+        st.markdown("<div class='status-indicator status-active'>Live detection active</div>", unsafe_allow_html=True)
     else:
-        st.info("● Ready – Click 'Start Camera'")
+        st.markdown("<div class='status-indicator status-ready'>Ready – Select 'Start Camera'</div>", unsafe_allow_html=True)
 
-    # Apply video container styling
     st.markdown("<div class='video-container'>", unsafe_allow_html=True)
-    # The webrtc component renders inside the previous container automatically
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== FOOTER ====================
+# Footer
 st.markdown("""
 <div class="footer">
-    Built with <strong>Streamlit</strong> • Powered by <strong>Ultralytics YOLOv8</strong><br>
+    Powered by Streamlit and Ultralytics YOLOv8<br>
     <a href="https://ultralytics.com" target="_blank">Ultralytics</a> • 
     <a href="https://docs.ultralytics.com" target="_blank">Documentation</a>
 </div>
