@@ -13,7 +13,7 @@ A fast, interactive real-time object detection web app using **YOLOv8** (Ultraly
 
 ## Live Demo
 Replace with your deployed URL once live:
-[Streamlit Link]([https://real-time-object-detection-using-yolov8-opencv-nzdcfwtnp3dqubf.streamlit.app/](https://real-time-object-detection-using-yolov8-opencv-lasyyvmcdwxk63q.streamlit.app/))
+[Streamlit Link](https://real-time-object-detection-using-yolov8-opencv-lasyyvmcdwxk63q.streamlit.app/))
 
 ## Screenshots
 <!-- Add GIF or images here for visual appeal -->
