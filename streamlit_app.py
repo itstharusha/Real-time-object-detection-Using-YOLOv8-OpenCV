@@ -5,6 +5,10 @@ import av
 import threading
 import pandas as pd
 
+# Import ByteTrack from YOLOX (you need to install yolox)
+from yolox.tracker.byte_tracker import BYTETracker
+from ultralytics.utils.plotting import Annotator
+
 # Page config
 st.set_page_config(
     page_title="YOLOv8 Object Tracking Dashboard",
@@ -16,13 +20,6 @@ st.set_page_config(
 # Scoped CSS
 st.markdown("""
 <style>
-    .card {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
     .status {
         display: inline-block;
         padding: 0.4rem 0.8rem;
@@ -37,7 +34,7 @@ st.markdown("""
 
 # Header
 st.title("YOLOv8 Object Tracking Dashboard")
-st.caption("Real-time detection + tracking powered by Ultralytics YOLOv8")
+st.caption("Real-time detection + tracking powered by Ultralytics YOLOv8 + ByteTrack")
 
 # Model loading
 @st.cache_resource
@@ -45,7 +42,7 @@ def load_model():
     return YOLO("yolov8n.pt")
 
 model = load_model()
-st.success("✅ Model YOLOv8n loaded successfully")
+st.success("Model YOLOv8n loaded successfully")
 
 # Layout
 left, right = st.columns([1, 2], gap="large")
@@ -72,7 +69,8 @@ with right:
             self.lock = threading.Lock()
             self.conf = conf
             self.iou = iou
-            self.last_results = []
+            self.tracker = BYTETracker()   # persistent tracker
+            self.last_tracks = []
 
         def update_params(self, conf, iou):
             with self.lock:
@@ -84,27 +82,30 @@ with right:
             with self.lock:
                 c, i = self.conf, self.iou
 
-            # Tracking instead of detection
-            results = model.track(
-                source=img,
-                conf=c,
-                iou=i,
-                persist=True,
-                verbose=False,
-                device="cpu"
-            )
+            # Run YOLO detection
+            results = model.predict(img, conf=c, iou=i, verbose=False, device="cpu")
+            boxes = results[0].boxes
 
-            # Save results for sidebar metrics
-            self.last_results = results[0].boxes
+            if boxes is not None and len(boxes) > 0:
+                dets = boxes.xywh.cpu().numpy()
+                scores = boxes.conf.cpu().numpy()
+                cls_ids = boxes.cls.cpu().numpy()
 
-            # Annotated frame with IDs
-            annotated = results[0].plot(
-                line_width=2,
-                font_size=1,
-                labels=True,
-                boxes=True,
-                probs=True
-            )
+                # Update tracker
+                tracks = self.tracker.update(dets, scores, cls_ids, img.shape)
+
+                # Draw boxes with IDs
+                annotator = Annotator(img)
+                for track in tracks:
+                    x1, y1, x2, y2, track_id, cls_id = track
+                    label = f"{model.names[int(cls_id)]} ID:{int(track_id)}"
+                    annotator.box_label([x1, y1, x2, y2], label)
+
+                self.last_tracks = tracks
+                annotated = annotator.result()
+            else:
+                self.last_tracks = []
+                annotated = img
 
             return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
@@ -127,18 +128,15 @@ with right:
 
 # Sidebar: tracked objects table
 st.sidebar.header("Tracked Objects")
-if ctx and ctx.video_processor and ctx.video_processor.last_results is not None:
-    boxes = ctx.video_processor.last_results
-    if len(boxes) > 0:
+if ctx and ctx.video_processor and ctx.video_processor.last_tracks is not None:
+    tracks = ctx.video_processor.last_tracks
+    if len(tracks) > 0:
         data = []
-        for box in boxes:
-            cls_id = int(box.cls[0]) if box.cls is not None else -1
-            track_id = int(box.id[0]) if box.id is not None else -1
-            conf_score = float(box.conf[0]) if box.conf is not None else 0.0
+        for track in tracks:
+            x1, y1, x2, y2, track_id, cls_id = track
             data.append({
-                "Track ID": track_id,
-                "Class": model.names.get(cls_id, "unknown"),
-                "Confidence": f"{conf_score:.2f}"
+                "Track ID": int(track_id),
+                "Class": model.names.get(int(cls_id), "unknown"),
             })
         df = pd.DataFrame(data)
         st.sidebar.dataframe(df, use_container_width=True)
@@ -149,4 +147,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.caption("Powered by Streamlit • Ultralytics YOLOv8")
+st.caption("Powered by Streamlit • Ultralytics YOLOv8 + ByteTrack")
