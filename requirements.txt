@@ -1,0 +1,6 @@
+streamlit
+streamlit-webrtc
+ultralytics
+torch  # Includes torchvision
+av
+opencv-python
