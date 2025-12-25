@@ -4,4 +4,4 @@ torch
 av
 opencv-python-headless==4.11.0.86 
 ultralytics==8.3.241
-git+https://github.com/Megvii-BaseDetection/YOLOX.git
+
