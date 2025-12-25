@@ -17,7 +17,9 @@ Replace with your deployed URL once live:
 
 ## Screenshots
 <!-- Add GIF or images here for visual appeal -->
-![Demo](demos/demo.gif)  <!-- Upload a short webcam demo GIF to /demos -->
+![Demo](demos/demo.gif) 
+<!-- Upload a short webcam demo GIF to /demos -->
+<img width="1919" height="877" alt="Screenshot 2025-12-25 123336" src="https://github.com/user-attachments/assets/5161bcf4-bb92-48dc-80e0-1b3d65322e4c" />
 
 ## Quick Start (Local)
 1. Clone the repo:
