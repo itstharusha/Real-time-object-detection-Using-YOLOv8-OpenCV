@@ -3,274 +3,148 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase
 from ultralytics import YOLO
 import av
 import threading
+import pandas as pd
 
-# Page Configuration
+# Import ByteTrack from YOLOX (you need to install yolox)
+from yolox.tracker.byte_tracker import BYTETracker
+from ultralytics.utils.plotting import Annotator
+
+# Page config
 st.set_page_config(
     page_title="YOLOv8 Object Tracking Dashboard",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="collapsed",
-    menu_items=None
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for Professional Dashboard Aesthetic
+# Scoped CSS
 st.markdown("""
 <style>
-    /* System font stack for maximum professionalism */
-    html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-    }
-
-    /* Container adjustments */
-    .block-container {
-        max-width: 1400px;
-        padding-top: 3rem;
-        padding-bottom: 3rem;
-        padding-left: 2rem;
-        padding-right: 2rem;
-    }
-
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-
-    /* Header */
-    .main-header h1 {
-        font-size: 2.5rem;
-        font-weight: 600;
-        color: #111827;
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }
-    .main-header p {
-        font-size: 1.125rem;
-        color: #4b5563;
-        text-align: center;
-        margin-top: 0;
-        font-weight: 400;
-    }
-
-    /* Clean card containers */
-    .dashboard-card {
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 2rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        height: 100%;
-    }
-
-    /* Section headers */
-    .section-header {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #111827;
-        margin-bottom: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        padding-bottom: 0.5rem;
-    }
-
-    /* Video feed container */
-    .video-container {
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        background: #000;
-    }
-
-    /* Status indicators */
-    .status-indicator {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.375rem 0.75rem;
+    .status {
+        display: inline-block;
+        padding: 0.4rem 0.8rem;
         border-radius: 6px;
-        font-size: 0.875rem;
-        font-weight: 500;
-        background: #f3f4f6;
-        color: #374151;
+        font-size: 0.9em;
+        font-weight: 600;
     }
-    .status-active { background: #ecfdf5; color: #065f46; }
-    .status-ready { background: #fef3c7; color: #92400e; }
-
-    /* Sidebar table */
-    .sidebar-table {
-        font-size: 0.875rem;
-    }
-
-    /* Footer */
-    .footer {
-        text-align: center;
-        margin-top: 4rem;
-        padding: 1.5rem 0;
-        color: #6b7280;
-        font-size: 0.875rem;
-        border-top: 1px solid #e5e7eb;
-    }
-    .footer a {
-        color: #4f46e5;
-        text-decoration: none;
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        div[data-testid="column"] {
-            width: 100% !important;
-            margin-bottom: 2rem;
-        }
-        .block-container {
-            padding-left: 1rem;
-            padding-right: 1rem;
-        }
-    }
+    .status.active { background: #ecfdf5; color: #065f46; }
+    .status.ready { background: #fef3c7; color: #92400e; }
 </style>
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown("""
-<div class="main-header">
-    <h1>YOLOv8 Object Tracking Dashboard</h1>
-    <p>Real-time object detection and tracking powered by Ultralytics YOLOv8 with ByteTrack</p>
-</div>
-""", unsafe_allow_html=True)
+st.title("YOLOv8 Object Tracking Dashboard")
+st.caption("Real-time detection + tracking powered by Ultralytics YOLOv8 + ByteTrack")
 
-# Model Loading
-@st.cache_resource(show_spinner=False)
+# Model loading
+@st.cache_resource
 def load_model():
-    with st.spinner("Initializing model..."):
-        return YOLO("yolov8n.pt")
+    return YOLO("yolov8n.pt")
 
 model = load_model()
-
-st.markdown("""
-<div class="status-indicator">
-    Model Status: YOLOv8n (nano) loaded successfully
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
+st.success("✅ Model YOLOv8n loaded successfully")
 
 # Layout
-left_col, right_col = st.columns([1, 2], gap="large")
+left, right = st.columns([1, 2], gap="large")
 
-with left_col:
-    st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-header'>Tracking Parameters</div>", unsafe_allow_html=True)
-
-    conf = st.slider(
-        "Confidence Threshold",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.25,
-        step=0.05,
-        help="Filters detections below the specified confidence level"
-    )
-
-    iou = st.slider(
-        "IoU Threshold (Non-Maximum Suppression)",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.45,
-        step=0.05,
-        help="Controls suppression of overlapping bounding boxes"
-    )
+with left:
+    st.subheader("Detection Parameters")
+    conf = st.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
+    iou = st.slider("IoU Threshold", 0.0, 1.0, 0.45, 0.05)
 
     with st.expander("Model Information"):
-        st.markdown("""
-        - **Architecture**: YOLOv8n (nano variant) – optimized for real-time performance
-        - **Tracker**: ByteTrack (built-in Ultralytics implementation)
+        st.write("""
+        - **Architecture**: YOLOv8n (nano)
         - **Inference Mode**: Client-side via WebRTC
-        - **Performance**: 20–35 FPS on standard hardware
-        - **Note**: For improved accuracy, consider yolov8m.pt or yolov8l.pt
+        - **Performance**: ~20–35 FPS
+        - **Tip**: Use yolov8m/l for higher accuracy
         """)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+with right:
+    st.subheader("Live Tracking Feed")
+    st.caption("Click 'Start Camera' and grant permission.")
 
-with right_col:
-    st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-header'>Live Tracking Feed</div>", unsafe_allow_html=True)
-
-    st.caption("Select 'Start Camera' and grant permission. Parameter adjustments apply in real time.")
-
-    class YOLOTracker(VideoProcessorBase):
+    class YOLODetector(VideoProcessorBase):
         def __init__(self):
             self.lock = threading.Lock()
             self.conf = conf
             self.iou = iou
+            self.tracker = BYTETracker()   # persistent tracker
+            self.last_tracks = []
 
         def update_params(self, conf, iou):
             with self.lock:
-                self.conf = conf
-                self.iou = iou
+                self.conf, self.iou = conf, iou
 
         def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
             img = frame.to_ndarray(format="bgr24")
 
             with self.lock:
-                current_conf = self.conf
-                current_iou = self.iou
+                c, i = self.conf, self.iou
 
-            # Use built-in YOLOv8 tracking (ByteTrack)
-            results = model.track(
-                source=img,
-                conf=current_conf,
-                iou=current_iou,
-                persist=True,
-                tracker="bytetrack.yaml",
-                verbose=False,
-                device="cpu"
-            )
+            # Run YOLO detection
+            results = model.predict(img, conf=c, iou=i, verbose=False, device="cpu")
+            boxes = results[0].boxes
 
-            annotated = results[0].plot(line_width=2, font_size=1, labels=True, boxes=True, probs=True)
+            if boxes is not None and len(boxes) > 0:
+                dets = boxes.xywh.cpu().numpy()
+                scores = boxes.conf.cpu().numpy()
+                cls_ids = boxes.cls.cpu().numpy()
+
+                # Update tracker
+                tracks = self.tracker.update(dets, scores, cls_ids, img.shape)
+
+                # Draw boxes with IDs
+                annotator = Annotator(img)
+                for track in tracks:
+                    x1, y1, x2, y2, track_id, cls_id = track
+                    label = f"{model.names[int(cls_id)]} ID:{int(track_id)}"
+                    annotator.box_label([x1, y1, x2, y2], label)
+
+                self.last_tracks = tracks
+                annotated = annotator.result()
+            else:
+                self.last_tracks = []
+                annotated = img
 
             return av.VideoFrame.from_ndarray(annotated, format="bgr24")
 
     ctx = webrtc_streamer(
-        key="yolov8-tracking",
+        key="yolo-feed",
         mode=WebRtcMode.SENDRECV,
-        video_processor_factory=YOLOTracker,
+        video_processor_factory=YOLODetector,
         rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-        media_stream_constraints={
-            "video": {"width": {"ideal": 1280}, "height": {"ideal": 720}},
-            "audio": False
-        },
-        async_processing=True,
-        translations={
-            "start": "Start Camera",
-            "stop": "Stop Camera"
-        }
+        media_stream_constraints={"video": {"width": {"ideal": 1280}, "height": {"ideal": 720}}, "audio": False},
+        async_processing=True
     )
 
     if ctx.video_processor:
         ctx.video_processor.update_params(conf, iou)
 
     if ctx.state.playing:
-        st.markdown("<div class='status-indicator status-active'>Live tracking active</div>", unsafe_allow_html=True)
+        st.markdown('<span class="status active">Live tracking active</span>', unsafe_allow_html=True)
     else:
-        st.markdown("<div class='status-indicator status-ready'>Ready – Select 'Start Camera'</div>", unsafe_allow_html=True)
+        st.markdown('<span class="status ready">Ready – Start Camera</span>', unsafe_allow_html=True)
 
-    st.markdown("<div class='video-container'>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# Sidebar: Tracked Objects (from latest result)
-st.sidebar.header("Currently Tracked Objects")
-
-if ctx and ctx.video_processor:
-    # Note: We cannot directly access the last results here due to processor isolation.
-    # For a production app, consider sharing state via session_state or queue.
-    st.sidebar.info("Live tracked objects display requires additional state management across WebRTC threads.")
-    st.sidebar.caption("In this version, tracking IDs are visible directly on the video feed.")
+# Sidebar: tracked objects table
+st.sidebar.header("Tracked Objects")
+if ctx and ctx.video_processor and ctx.video_processor.last_tracks is not None:
+    tracks = ctx.video_processor.last_tracks
+    if len(tracks) > 0:
+        data = []
+        for track in tracks:
+            x1, y1, x2, y2, track_id, cls_id = track
+            data.append({
+                "Track ID": int(track_id),
+                "Class": model.names.get(int(cls_id), "unknown"),
+            })
+        df = pd.DataFrame(data)
+        st.sidebar.dataframe(df, use_container_width=True)
+    else:
+        st.sidebar.write("No objects detected.")
 else:
-    st.sidebar.info("Camera not active.")
+    st.sidebar.write("Camera not active.")
 
 # Footer
-st.markdown("""
-<div class="footer">
-    Powered by Streamlit and Ultralytics YOLOv8 (ByteTrack)<br>
-    <a href="https://ultralytics.com" target="_blank">Ultralytics</a> • 
-    <a href="https://docs.ultralytics.com" target="_blank">Documentation</a>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("---")
+st.caption("Powered by Streamlit • Ultralytics YOLOv8 + ByteTrack")
